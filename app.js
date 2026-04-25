@@ -23,7 +23,7 @@ const CATEGORIES = [
 ];
 
 const EMPTY_FORM = { name: "", price: "", qty: "1", category: "tortas" };
-const fmt = val => "$" + Number(val).toFixed(2);
+const fmt = val => "S/." + Number(val).toFixed(2);
 
 // ════════════════════════════════════════════════════════════
 //  PANTALLA DE LOGIN

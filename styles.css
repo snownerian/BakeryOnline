@@ -240,3 +240,70 @@ body { font-family: 'Georgia', 'Times New Roman', serif; background: #fdf6ee; mi
   .logo-title { font-size: 17px; }
   .user-badge { display: none; }
 }
+
+/* ===== FOTOS (nuevo) ===== */
+
+/* Botón 📷 en la tarjeta del producto */
+.photo-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 15px; padding: 2px 3px; border-radius: 5px;
+  opacity: 0.7; transition: opacity 0.15s; flex-shrink: 0;
+}
+.photo-btn:hover { opacity: 1; }
+
+/* Lightbox — fondo oscuro al ver foto en grande */
+.lightbox-box {
+  position: relative;
+  background: #1a1008;
+  border-radius: 14px;
+  padding: 12px;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lightbox-img {
+  max-width: 80vw;
+  max-height: 80vh;
+  border-radius: 10px;
+  object-fit: contain;
+  display: block;
+}
+.lightbox-close {
+  position: absolute; top: -12px; right: -12px;
+  background: #3d2510; color: #fff;
+  border: none; border-radius: 50%;
+  width: 30px; height: 30px;
+  font-size: 14px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+.lightbox-close:hover { background: #c0392b; }
+
+/* Área de subida de imagen en el formulario */
+.image-upload-label {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; padding: 10px;
+  border: 2px dashed #d4b896; border-radius: 10px;
+  cursor: pointer; color: #9a7050; font-size: 14px;
+  transition: all 0.2s; margin-top: 4px;
+}
+.image-upload-label:hover { border-color: #8B5E3C; color: #8B5E3C; background: #fdf5ec; }
+
+/* Preview de imagen seleccionada en el formulario */
+.image-preview-box {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  margin-top: 4px;
+}
+.image-preview {
+  width: 100%; max-height: 160px;
+  object-fit: cover; border-radius: 10px;
+  border: 1.5px solid #ecdccc;
+}
+.remove-image-btn {
+  background: none; border: none; color: #c0392b;
+  font-size: 12px; cursor: pointer; font-family: inherit;
+  text-decoration: underline;
+}
+.remove-image-btn:hover { color: #a93226; }

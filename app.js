@@ -2,6 +2,7 @@
 //  app.js — La Panadería | Gestión de Productos
 //  • Login con Supabase Auth (email + contraseña)
 //  • Productos guardados en Supabase (acceso desde cualquier dispositivo)
+//  • Fotos opcionales por producto (Supabase Storage)
 //  • Sin Node.js — abre index.html directo en el navegador
 // ============================================================
 
@@ -12,6 +13,8 @@ const SUPABASE_URL  = "https://haflelflzxsedhjvgtwz.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhZmxlbGZsenhzZWRoanZndHd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNzcwNjEsImV4cCI6MjA5MjY1MzA2MX0.omCrb2D2iCleq7fFfPurS-89m_P6IGo1jhrG8Hg3uFM";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
+const BUCKET = "product-images";
+
 // ── Categorías ───────────────────────────────────────────────
 const CATEGORIES = [
   { id: "tortas",            label: "Tortas",            icon: "🎂", color: "#C8855A" },
@@ -20,10 +23,10 @@ const CATEGORIES = [
   { id: "bocaditos_dulces",  label: "Bocaditos Dulces",  icon: "🍬", color: "#C97B8A" },
   { id: "bocaditos_salados", label: "Bocaditos Salados", icon: "🧀", color: "#8A9E6A" },
   { id: "panes",             label: "Panes",             icon: "🍞", color: "#C4924A" },
-  { id: "Festivos",          label: "Festivos",          icon: "★", color: "#5AC867" }
+  { id: "Festivos",          label: "Festivos",          icon: "★",  color: "#5AC867" },
 ];
 
-const EMPTY_FORM = { name: "", price: "", qty: "1", category: "tortas" };
+const EMPTY_FORM = { name: "", price: "", qty: "1", category: "tortas", image_url: "" };
 const fmt = val => "S/." + Number(val).toFixed(2);
 
 // ════════════════════════════════════════════════════════════
@@ -32,7 +35,7 @@ const fmt = val => "S/." + Number(val).toFixed(2);
 function LoginScreen({ onLogin }) {
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
-  const [mode,     setMode]     = useState("login"); // "login" | "register"
+  const [mode,     setMode]     = useState("login");
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
 
@@ -103,18 +106,23 @@ function LoginScreen({ onLogin }) {
 //  APP PRINCIPAL
 // ════════════════════════════════════════════════════════════
 function BakeryManager({ session, onLogout }) {
-  const [products,  setProducts]  = useState([]);
-  const [cart,      setCart]      = useState({});
-  const [loading,   setLoading]   = useState(true);
-  const [showForm,  setShowForm]  = useState(false);
-  const [form,      setForm]      = useState(EMPTY_FORM);
-  const [editId,    setEditId]    = useState(null);
-  const [deleteId,  setDeleteId]  = useState(null);
-  const [activeTab, setActiveTab] = useState("all");
-  const [toast,     setToast]     = useState("");
-  const [saving,    setSaving]    = useState(false);
+  const [products,     setProducts]     = useState([]);
+  const [cart,         setCart]         = useState({});
+  const [loading,      setLoading]      = useState(true);
+  const [showForm,     setShowForm]     = useState(false);
+  const [form,         setForm]         = useState(EMPTY_FORM);
+  const [editId,       setEditId]       = useState(null);
+  const [deleteId,     setDeleteId]     = useState(null);
+  const [activeTab,    setActiveTab]    = useState("all");
+  const [toast,        setToast]        = useState("");
+  const [saving,       setSaving]       = useState(false);
+  // ── Estados nuevos para fotos ──
+  const [imageFile,    setImageFile]    = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [lightbox,     setLightbox]     = useState("");
+  const [uploadingImg, setUploadingImg] = useState(false);
 
-  // ── Cargar productos desde Supabase ──────────────────────
+  // ── Cargar productos ─────────────────────────────────────
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     const { data, error } = await sb.from("products").select("*").order("created_at", { ascending: true });
@@ -153,35 +161,96 @@ function BakeryManager({ session, onLogout }) {
   function clearCart() { setCart({}); }
 
   // ── Formulario ───────────────────────────────────────────
-  function openAdd()  { setForm(EMPTY_FORM); setEditId(null); setShowForm(true); }
+  function openAdd() {
+    setForm(EMPTY_FORM);
+    setEditId(null);
+    setImageFile(null);
+    setImagePreview("");
+    setShowForm(true);
+  }
+
   function openEdit(p) {
-    setForm({ name: p.name, price: String(p.price), qty: String(p.qty), category: p.category });
-    setEditId(p.id); setShowForm(true);
+    setForm({ name: p.name, price: String(p.price), qty: String(p.qty), category: p.category, image_url: p.image_url || "" });
+    setEditId(p.id);
+    setImageFile(null);
+    setImagePreview(p.image_url || "");
+    setShowForm(true);
+  }
+
+  function handleImageSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  }
+
+  function removeImage() {
+    setImageFile(null);
+    setImagePreview("");
+    setForm(prev => ({ ...prev, image_url: "" }));
+  }
+
+  async function uploadImage(productId) {
+    if (!imageFile) return form.image_url || null;
+    setUploadingImg(true);
+    const ext  = imageFile.name.split(".").pop();
+    const path = `${productId}_${Date.now()}.${ext}`;
+    const { error } = await sb.storage.from(BUCKET).upload(path, imageFile, { upsert: true });
+    setUploadingImg(false);
+    if (error) { showToast("Error al subir foto: " + error.message); return null; }
+    const { data } = sb.storage.from(BUCKET).getPublicUrl(path);
+    return data.publicUrl;
   }
 
   async function saveForm() {
     if (!form.name.trim() || !form.price || !form.qty) return;
     setSaving(true);
-    const payload = {
-      name: form.name.trim(),
-      price: parseFloat(form.price),
-      qty: parseInt(form.qty),
-      category: form.category,
-    };
-    if (editId !== null) {
+
+    if (editId === null) {
+      // Insertar primero para obtener el id, luego subir foto
+      const { data, error } = await sb.from("products").insert({
+        name: form.name.trim(),
+        price: parseFloat(form.price),
+        qty: parseInt(form.qty),
+        category: form.category,
+      }).select().single();
+      if (error) { showToast("Error al guardar: " + error.message); setSaving(false); return; }
+
+      const imageUrl = await uploadImage(data.id);
+      if (imageUrl) {
+        await sb.from("products").update({ image_url: imageUrl }).eq("id", data.id);
+      }
+      showToast("✓ Producto agregado");
+    } else {
+      const imageUrl = await uploadImage(editId);
+      const payload = {
+        name: form.name.trim(),
+        price: parseFloat(form.price),
+        qty: parseInt(form.qty),
+        category: form.category,
+        image_url: imageUrl,
+      };
       const { error } = await sb.from("products").update(payload).eq("id", editId);
       if (error) { showToast("Error al guardar: " + error.message); setSaving(false); return; }
       showToast("✓ Producto actualizado");
-    } else {
-      const { error } = await sb.from("products").insert(payload);
-      if (error) { showToast("Error al guardar: " + error.message); setSaving(false); return; }
-      showToast("✓ Producto agregado");
     }
+
     await fetchProducts();
-    setSaving(false); setShowForm(false); setForm(EMPTY_FORM); setEditId(null);
+    setSaving(false);
+    setShowForm(false);
+    setForm(EMPTY_FORM);
+    setEditId(null);
+    setImageFile(null);
+    setImagePreview("");
   }
 
   async function doDelete() {
+    // Eliminar foto del storage si tiene
+    const p = products.find(x => x.id === deleteId);
+    if (p?.image_url) {
+      const parts = p.image_url.split(`${BUCKET}/`);
+      if (parts[1]) await sb.storage.from(BUCKET).remove([parts[1]]);
+    }
     const { error } = await sb.from("products").delete().eq("id", deleteId);
     if (error) { showToast("Error al eliminar: " + error.message); return; }
     setCart(prev => { const n = {...prev}; delete n[deleteId]; return n; });
@@ -205,6 +274,16 @@ function BakeryManager({ session, onLogout }) {
     <div>
       <div className="bg-pattern" />
       {toast && <div className="toast">{toast}</div>}
+
+      {/* LIGHTBOX — ver foto en grande */}
+      {lightbox && (
+        <div className="overlay" onClick={() => setLightbox("")}>
+          <div className="lightbox-box" onClick={e => e.stopPropagation()}>
+            <button className="lightbox-close" onClick={() => setLightbox("")}>✕</button>
+            <img src={lightbox} className="lightbox-img" alt="Foto del producto" />
+          </div>
+        </div>
+      )}
 
       {/* HEADER */}
       <header className="header">
@@ -277,6 +356,10 @@ function BakeryManager({ session, onLogout }) {
                           <span className="card-price" style={{ background: cat.color + "22", color: cat.color }}>
                             {fmt(p.price)}
                           </span>
+                          {/* Botón ver foto — solo aparece si el producto tiene foto */}
+                          {p.image_url && (
+                            <button className="photo-btn" onClick={() => setLightbox(p.image_url)} title="Ver foto">📷</button>
+                          )}
                           <div className="card-actions">
                             <button className="action-btn" onClick={() => openEdit(p)} title="Editar">✏️</button>
                             <button className="action-btn" onClick={() => setDeleteId(p.id)} title="Eliminar">🗑️</button>
@@ -371,14 +454,16 @@ function BakeryManager({ session, onLogout }) {
         <div className="overlay" onClick={() => setShowForm(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-title">{editId ? "✏️ Editar Producto" : "➕ Nuevo Producto"}</div>
+
             <label className="field-label">Nombre del producto</label>
             <input className="form-input" value={form.name}
                    onChange={e => setForm({...form, name: e.target.value})}
                    onKeyDown={e => e.key === "Enter" && saveForm()}
                    placeholder="Ej: Torta de Chocolate" autoFocus />
+
             <div className="field-row">
               <div>
-                <label className="field-label">Precio ($)</label>
+                <label className="field-label">Precio (S/.)</label>
                 <input className="form-input" type="number" min="0" step="0.50"
                        value={form.price}
                        onChange={e => setForm({...form, price: e.target.value})}
@@ -394,15 +479,31 @@ function BakeryManager({ session, onLogout }) {
                        placeholder="1" />
               </div>
             </div>
+
             <label className="field-label">Categoría</label>
             <select className="form-input" value={form.category}
                     onChange={e => setForm({...form, category: e.target.value})}>
               {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
             </select>
+
+            {/* ── Sección de foto (nueva) ── */}
+            <label className="field-label">Foto del producto (opcional)</label>
+            {imagePreview ? (
+              <div className="image-preview-box">
+                <img src={imagePreview} className="image-preview" alt="Preview" />
+                <button className="remove-image-btn" onClick={removeImage}>✕ Quitar foto</button>
+              </div>
+            ) : (
+              <label className="image-upload-label">
+                <input type="file" accept="image/*" onChange={handleImageSelect} style={{ display:"none" }} />
+                <span>📷 Seleccionar foto</span>
+              </label>
+            )}
+
             <div className="modal-actions">
               <button className="cancel-btn" onClick={() => setShowForm(false)}>Cancelar</button>
-              <button className="save-btn" onClick={saveForm} disabled={saving}>
-                {saving ? "Guardando..." : editId ? "Guardar cambios" : "Agregar producto"}
+              <button className="save-btn" onClick={saveForm} disabled={saving || uploadingImg}>
+                {uploadingImg ? "Subiendo foto..." : saving ? "Guardando..." : editId ? "Guardar cambios" : "Agregar producto"}
               </button>
             </div>
           </div>
@@ -430,16 +531,14 @@ function BakeryManager({ session, onLogout }) {
 //  RAÍZ — maneja sesión
 // ════════════════════════════════════════════════════════════
 function App() {
-  const [session, setSession] = useState(null);
+  const [session,  setSession]  = useState(null);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Verificar si ya hay sesión activa
     sb.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setChecking(false);
     });
-    // Escuchar cambios de sesión
     const { data: listener } = sb.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -458,10 +557,7 @@ function App() {
     );
   }
 
-  if (!session) {
-    return <LoginScreen onLogin={setSession} />;
-  }
-
+  if (!session) return <LoginScreen onLogin={setSession} />;
   return <BakeryManager session={session} onLogout={() => setSession(null)} />;
 }
 

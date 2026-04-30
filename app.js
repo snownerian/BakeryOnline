@@ -1,21 +1,18 @@
 // ============================================================
 //  app.js — La Panadería | Gestión de Productos
-//  • Login con Supabase Auth (email + contraseña)
-//  • Productos guardados en Supabase (acceso desde cualquier dispositivo)
-//  • Fotos opcionales por producto (Supabase Storage)
-//  • Sin Node.js — abre index.html directo en el navegador
+//  • Login con Supabase Auth
+//  • Fotos opcionales por producto
+//  • Buscador con filtro en vista principal + navegación teclado
 // ============================================================
 
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useRef } = React;
 
-// ── Supabase ─────────────────────────────────────────────────
 const SUPABASE_URL  = "https://haflelflzxsedhjvgtwz.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhZmxlbGZsenhzZWRoanZndHd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNzcwNjEsImV4cCI6MjA5MjY1MzA2MX0.omCrb2D2iCleq7fFfPurS-89m_P6IGo1jhrG8Hg3uFM";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 const BUCKET = "product-images";
 
-// ── Categorías ───────────────────────────────────────────────
 const CATEGORIES = [
   { id: "tortas",            label: "Tortas",            icon: "🎂", color: "#C8855A" },
   { id: "pies",              label: "Pies",              icon: "🥧", color: "#B5703F" },
@@ -29,8 +26,13 @@ const CATEGORIES = [
 const EMPTY_FORM = { name: "", price: "", qty: "1", category: "tortas", image_url: "" };
 const fmt = val => "S/." + Number(val).toFixed(2);
 
+// Normaliza texto para búsqueda (quita tildes, minúsculas)
+function normalize(str) {
+  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 // ════════════════════════════════════════════════════════════
-//  PANTALLA DE LOGIN
+//  LOGIN
 // ════════════════════════════════════════════════════════════
 function LoginScreen({ onLogin }) {
   const [email,    setEmail]    = useState("");
@@ -54,9 +56,7 @@ function LoginScreen({ onLogin }) {
         if (result.error) throw result.error;
         onLogin(result.data.session);
       }
-    } catch(e) {
-      setError(e.message || "Error al iniciar sesión.");
-    }
+    } catch(e) { setError(e.message || "Error al iniciar sesión."); }
     setLoading(false);
   }
 
@@ -69,33 +69,23 @@ function LoginScreen({ onLogin }) {
         <div className="login-logo">🥐</div>
         <div className="login-title">La Panadería</div>
         <div className="login-sub">{mode === "login" ? "Inicia sesión para continuar" : "Crea tu cuenta"}</div>
-
-        {error && (
-          <div className={"login-msg " + (error.startsWith("✓") ? "login-msg-ok" : "login-msg-err")}>
-            {error}
-          </div>
-        )}
-
+        {error && <div className={"login-msg " + (error.startsWith("✓") ? "login-msg-ok" : "login-msg-err")}>{error}</div>}
         <label className="field-label">Correo electrónico</label>
         <input className="form-input" type="email" value={email}
                onChange={e => setEmail(e.target.value)} onKeyDown={handleKey}
                placeholder="tu@correo.com" autoFocus />
-
         <label className="field-label">Contraseña</label>
         <input className="form-input" type="password" value={password}
                onChange={e => setPassword(e.target.value)} onKeyDown={handleKey}
                placeholder="••••••••" />
-
         <button className="save-btn login-btn" onClick={handleSubmit} disabled={loading}>
           {loading ? "Cargando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
         </button>
-
         <div className="login-switch">
-          {mode === "login" ? (
-            <span>¿No tienes cuenta? <button className="link-btn" onClick={() => { setMode("register"); setError(""); }}>Regístrate</button></span>
-          ) : (
-            <span>¿Ya tienes cuenta? <button className="link-btn" onClick={() => { setMode("login"); setError(""); }}>Inicia sesión</button></span>
-          )}
+          {mode === "login"
+            ? <span>¿No tienes cuenta? <button className="link-btn" onClick={() => { setMode("register"); setError(""); }}>Regístrate</button></span>
+            : <span>¿Ya tienes cuenta? <button className="link-btn" onClick={() => { setMode("login"); setError(""); }}>Inicia sesión</button></span>
+          }
         </div>
       </div>
     </div>
@@ -116,26 +106,56 @@ function BakeryManager({ session, onLogout }) {
   const [activeTab,    setActiveTab]    = useState("all");
   const [toast,        setToast]        = useState("");
   const [saving,       setSaving]       = useState(false);
-  // ── Estados nuevos para fotos ──
   const [imageFile,    setImageFile]    = useState(null);
   const [imagePreview, setImagePreview] = useState("");
   const [lightbox,     setLightbox]     = useState("");
   const [uploadingImg, setUploadingImg] = useState(false);
+
+  // ── Estados del buscador ─────────────────────────────────
+  const [query,        setQuery]        = useState("");
+  const [focusedIdx,   setFocusedIdx]   = useState(-1); // índice global de la lista filtrada
+  const searchRef = useRef(null);
 
   // ── Cargar productos ─────────────────────────────────────
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     const { data, error } = await sb.from("products").select("*").order("created_at", { ascending: true });
     if (!error) setProducts(data || []);
-    else showToast("Error al cargar productos: " + error.message);
+    else showToast("Error al cargar: " + error.message);
     setLoading(false);
   }, []);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
-  function showToast(msg) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 2500);
+  function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2500); }
+
+  // ── Lógica de búsqueda ───────────────────────────────────
+  const isSearching = query.trim().length > 0;
+
+  // Lista plana de productos filtrados (para navegación con teclado)
+  const filteredProducts = isSearching
+    ? products.filter(p => normalize(p.name).includes(normalize(query.trim())))
+    : products;
+
+  // Reset índice cuando cambia la búsqueda
+  useEffect(() => { setFocusedIdx(-1); }, [query]);
+
+  function handleSearchKey(e) {
+    if (!isSearching) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIdx(i => Math.min(i + 1, filteredProducts.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const target = focusedIdx >= 0 ? filteredProducts[focusedIdx] : filteredProducts[0];
+      if (target) toggleCart(target.id);
+    } else if (e.key === "Escape") {
+      setQuery("");
+      searchRef.current?.blur();
+    }
   }
 
   // ── Carrito ──────────────────────────────────────────────
@@ -162,34 +182,21 @@ function BakeryManager({ session, onLogout }) {
 
   // ── Formulario ───────────────────────────────────────────
   function openAdd() {
-    setForm(EMPTY_FORM);
-    setEditId(null);
-    setImageFile(null);
-    setImagePreview("");
-    setShowForm(true);
+    setForm(EMPTY_FORM); setEditId(null);
+    setImageFile(null); setImagePreview(""); setShowForm(true);
   }
-
   function openEdit(p) {
     setForm({ name: p.name, price: String(p.price), qty: String(p.qty), category: p.category, image_url: p.image_url || "" });
-    setEditId(p.id);
-    setImageFile(null);
-    setImagePreview(p.image_url || "");
-    setShowForm(true);
+    setEditId(p.id); setImageFile(null); setImagePreview(p.image_url || ""); setShowForm(true);
   }
-
   function handleImageSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+    setImageFile(file); setImagePreview(URL.createObjectURL(file));
   }
-
   function removeImage() {
-    setImageFile(null);
-    setImagePreview("");
-    setForm(prev => ({ ...prev, image_url: "" }));
+    setImageFile(null); setImagePreview(""); setForm(prev => ({ ...prev, image_url: "" }));
   }
-
   async function uploadImage(productId) {
     if (!imageFile) return form.image_url || null;
     setUploadingImg(true);
@@ -205,47 +212,30 @@ function BakeryManager({ session, onLogout }) {
   async function saveForm() {
     if (!form.name.trim() || !form.price || !form.qty) return;
     setSaving(true);
-
     if (editId === null) {
-      // Insertar primero para obtener el id, luego subir foto
       const { data, error } = await sb.from("products").insert({
-        name: form.name.trim(),
-        price: parseFloat(form.price),
-        qty: parseInt(form.qty),
-        category: form.category,
+        name: form.name.trim(), price: parseFloat(form.price),
+        qty: parseInt(form.qty), category: form.category,
       }).select().single();
-      if (error) { showToast("Error al guardar: " + error.message); setSaving(false); return; }
-
+      if (error) { showToast("Error: " + error.message); setSaving(false); return; }
       const imageUrl = await uploadImage(data.id);
-      if (imageUrl) {
-        await sb.from("products").update({ image_url: imageUrl }).eq("id", data.id);
-      }
+      if (imageUrl) await sb.from("products").update({ image_url: imageUrl }).eq("id", data.id);
       showToast("✓ Producto agregado");
     } else {
       const imageUrl = await uploadImage(editId);
-      const payload = {
-        name: form.name.trim(),
-        price: parseFloat(form.price),
-        qty: parseInt(form.qty),
-        category: form.category,
-        image_url: imageUrl,
-      };
-      const { error } = await sb.from("products").update(payload).eq("id", editId);
-      if (error) { showToast("Error al guardar: " + error.message); setSaving(false); return; }
+      const { error } = await sb.from("products").update({
+        name: form.name.trim(), price: parseFloat(form.price),
+        qty: parseInt(form.qty), category: form.category, image_url: imageUrl,
+      }).eq("id", editId);
+      if (error) { showToast("Error: " + error.message); setSaving(false); return; }
       showToast("✓ Producto actualizado");
     }
-
     await fetchProducts();
-    setSaving(false);
-    setShowForm(false);
-    setForm(EMPTY_FORM);
-    setEditId(null);
-    setImageFile(null);
-    setImagePreview("");
+    setSaving(false); setShowForm(false); setForm(EMPTY_FORM);
+    setEditId(null); setImageFile(null); setImagePreview("");
   }
 
   async function doDelete() {
-    // Eliminar foto del storage si tiene
     const p = products.find(x => x.id === deleteId);
     if (p?.image_url) {
       const parts = p.image_url.split(`${BUCKET}/`);
@@ -255,19 +245,31 @@ function BakeryManager({ session, onLogout }) {
     if (error) { showToast("Error al eliminar: " + error.message); return; }
     setCart(prev => { const n = {...prev}; delete n[deleteId]; return n; });
     await fetchProducts();
-    setDeleteId(null);
-    showToast("🗑️ Producto eliminado");
+    setDeleteId(null); showToast("🗑️ Producto eliminado");
   }
 
-  async function handleLogout() {
-    await sb.auth.signOut();
-    onLogout();
+  async function handleLogout() { await sb.auth.signOut(); onLogout(); }
+
+  // Categorías visibles según tab Y búsqueda
+  const tabCats = activeTab === "all" ? CATEGORIES : CATEGORIES.filter(c => c.id === activeTab);
+
+  // Para cada categoría, qué productos mostrar
+  function getItemsForCat(catId) {
+    return isSearching
+      ? filteredProducts.filter(p => p.category === catId)
+      : products.filter(p => p.category === catId);
   }
 
-  const visibleCats = activeTab === "all" ? CATEGORIES : CATEGORIES.filter(c => c.id === activeTab);
-  const cartLines   = Object.entries(cart)
+  // Índice global de un producto dentro de filteredProducts (para highlight con teclado)
+  function globalIdx(pid) {
+    return filteredProducts.findIndex(p => p.id === pid);
+  }
+
+  const cartLines = Object.entries(cart)
     .map(([id, qty]) => { const p = products.find(x => x.id === Number(id)); return p ? {...p, cartQty: qty} : null; })
     .filter(Boolean);
+
+  const totalFiltered = isSearching ? filteredProducts.length : null;
 
   // ── Render ───────────────────────────────────────────────
   return (
@@ -275,7 +277,7 @@ function BakeryManager({ session, onLogout }) {
       <div className="bg-pattern" />
       {toast && <div className="toast">{toast}</div>}
 
-      {/* LIGHTBOX — ver foto en grande */}
+      {/* LIGHTBOX */}
       {lightbox && (
         <div className="overlay" onClick={() => setLightbox("")}>
           <div className="lightbox-box" onClick={e => e.stopPropagation()}>
@@ -305,6 +307,33 @@ function BakeryManager({ session, onLogout }) {
       <div className="layout">
         <div className="main-col">
 
+          {/* ── BUSCADOR ── */}
+          <div className="search-wrap">
+            <span className="search-icon">🔍</span>
+            <input
+              ref={searchRef}
+              className="search-input"
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={handleSearchKey}
+              placeholder="Buscar producto... (↑↓ navegar, Enter para agregar al carrito)"
+            />
+            {isSearching && (
+              <button className="search-clear" onClick={() => setQuery("")} title="Limpiar">✕</button>
+            )}
+          </div>
+
+          {/* Contador de resultados */}
+          {isSearching && (
+            <div className="search-results-label">
+              {totalFiltered === 0
+                ? "Sin resultados para \"" + query + "\""
+                : totalFiltered + " producto" + (totalFiltered !== 1 ? "s" : "") + " encontrado" + (totalFiltered !== 1 ? "s" : "") + " · ↑↓ navegar · Enter agregar"
+              }
+            </div>
+          )}
+
           {/* TABS */}
           <div className="tab-bar">
             <button className={"tab" + (activeTab === "all" ? " active" : "")} onClick={() => setActiveTab("all")}>Todos</button>
@@ -318,32 +347,32 @@ function BakeryManager({ session, onLogout }) {
             ))}
           </div>
 
-          {/* LOADING */}
           {loading && (
             <div className="loading-state">
-              <div className="spinner" />
-              Cargando productos...
+              <div className="spinner" /> Cargando productos...
             </div>
           )}
 
-          {/* CATEGORÍAS */}
-          {!loading && visibleCats.map(cat => {
-            const items = products.filter(p => p.category === cat.id);
+          {/* CATEGORÍAS CON PRODUCTOS FILTRADOS */}
+          {!loading && tabCats.map(cat => {
+            const items = getItemsForCat(cat.id);
             if (items.length === 0) return null;
             return (
               <div key={cat.id} className="category-block">
                 <div className="category-header" style={{ borderColor: cat.color }}>
                   <span className="cat-icon" style={{ background: cat.color }}>{cat.icon}</span>
                   <span className="cat-label" style={{ color: cat.color }}>{cat.label}</span>
-                  <span className="cat-count">{items.length} productos</span>
+                  <span className="cat-count">{items.length} producto{items.length !== 1 ? "s" : ""}</span>
                 </div>
                 <div className="product-list">
                   {items.map(p => {
-                    const inCart = !!cart[p.id];
-                    const cqty   = cart[p.id] || 0;
+                    const inCart    = !!cart[p.id];
+                    const cqty      = cart[p.id] || 0;
+                    const gIdx      = globalIdx(p.id);
+                    const isFocused = isSearching && gIdx === focusedIdx;
                     return (
                       <div key={p.id}
-                           className={"card" + (inCart ? " in-cart" : "")}
+                           className={"card" + (inCart ? " in-cart" : "") + (isFocused ? " search-focused" : "")}
                            style={inCart ? { borderLeftColor: cat.color, borderLeftWidth: 4 } : {}}>
                         <div className="card-row">
                           <span className={"check-box" + (inCart ? " checked" : "")}
@@ -351,12 +380,13 @@ function BakeryManager({ session, onLogout }) {
                                 onClick={() => toggleCart(p.id)}>
                             {inCart && <span className="check-mark">✓</span>}
                           </span>
-                          <span className="card-name" onClick={() => toggleCart(p.id)}>{p.name}</span>
+                          <span className="card-name" onClick={() => toggleCart(p.id)}>
+                            {isSearching ? highlightMatch(p.name, query) : p.name}
+                          </span>
                           <span className="card-qty-label">×{p.qty}</span>
                           <span className="card-price" style={{ background: cat.color + "22", color: cat.color }}>
                             {fmt(p.price)}
                           </span>
-                          {/* Botón ver foto — solo aparece si el producto tiene foto */}
                           {p.image_url && (
                             <button className="photo-btn" onClick={() => setLightbox(p.image_url)} title="Ver foto">📷</button>
                           )}
@@ -383,9 +413,16 @@ function BakeryManager({ session, onLogout }) {
 
           {!loading && products.length === 0 && (
             <div className="empty-state">
-              <div style={{ fontSize: 48, marginBottom: 8 }}>🍞</div>
-              <div style={{ marginBottom: 12 }}>No hay productos todavía.</div>
+              <div style={{ fontSize:48, marginBottom:8 }}>🍞</div>
+              <div style={{ marginBottom:12 }}>No hay productos todavía.</div>
               <button className="add-btn" onClick={openAdd}>＋ Agregar primer producto</button>
+            </div>
+          )}
+
+          {!loading && isSearching && totalFiltered === 0 && (
+            <div className="empty-state">
+              <div style={{ fontSize:36, marginBottom:8 }}>🔍</div>
+              <div>Sin resultados para <strong>"{query}"</strong></div>
             </div>
           )}
         </div>
@@ -454,13 +491,11 @@ function BakeryManager({ session, onLogout }) {
         <div className="overlay" onClick={() => setShowForm(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-title">{editId ? "✏️ Editar Producto" : "➕ Nuevo Producto"}</div>
-
             <label className="field-label">Nombre del producto</label>
             <input className="form-input" value={form.name}
                    onChange={e => setForm({...form, name: e.target.value})}
                    onKeyDown={e => e.key === "Enter" && saveForm()}
                    placeholder="Ej: Torta de Chocolate" autoFocus />
-
             <div className="field-row">
               <div>
                 <label className="field-label">Precio (S/.)</label>
@@ -479,14 +514,11 @@ function BakeryManager({ session, onLogout }) {
                        placeholder="1" />
               </div>
             </div>
-
             <label className="field-label">Categoría</label>
             <select className="form-input" value={form.category}
                     onChange={e => setForm({...form, category: e.target.value})}>
               {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
             </select>
-
-            {/* ── Sección de foto (nueva) ── */}
             <label className="field-label">Foto del producto (opcional)</label>
             {imagePreview ? (
               <div className="image-preview-box">
@@ -499,7 +531,6 @@ function BakeryManager({ session, onLogout }) {
                 <span>📷 Seleccionar foto</span>
               </label>
             )}
-
             <div className="modal-actions">
               <button className="cancel-btn" onClick={() => setShowForm(false)}>Cancelar</button>
               <button className="save-btn" onClick={saveForm} disabled={saving || uploadingImg}>
@@ -510,10 +541,10 @@ function BakeryManager({ session, onLogout }) {
         </div>
       )}
 
-      {/* MODAL: Confirmar eliminación */}
+      {/* MODAL: Eliminar */}
       {deleteId !== null && (
         <div className="overlay" onClick={() => setDeleteId(null)}>
-          <div className="modal" style={{ maxWidth: 360 }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth:360 }} onClick={e => e.stopPropagation()}>
             <div className="modal-title">🗑️ Eliminar producto</div>
             <p>¿Eliminar <strong>{products.find(p => p.id === deleteId)?.name}</strong>? Esta acción no se puede deshacer.</p>
             <div className="modal-actions">
@@ -527,21 +558,31 @@ function BakeryManager({ session, onLogout }) {
   );
 }
 
+// Resalta la parte del nombre que coincide con la búsqueda
+function highlightMatch(name, query) {
+  const norm     = normalize(name);
+  const normQ    = normalize(query.trim());
+  const idx      = norm.indexOf(normQ);
+  if (idx === -1) return name;
+  return (
+    <span>
+      {name.slice(0, idx)}
+      <span className="search-highlight">{name.slice(idx, idx + query.trim().length)}</span>
+      {name.slice(idx + query.trim().length)}
+    </span>
+  );
+}
+
 // ════════════════════════════════════════════════════════════
-//  RAÍZ — maneja sesión
+//  RAÍZ
 // ════════════════════════════════════════════════════════════
 function App() {
   const [session,  setSession]  = useState(null);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    sb.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setChecking(false);
-    });
-    const { data: listener } = sb.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+    sb.auth.getSession().then(({ data }) => { setSession(data.session); setChecking(false); });
+    const { data: listener } = sb.auth.onAuthStateChange((_event, session) => { setSession(session); });
     return () => listener.subscription.unsubscribe();
   }, []);
 

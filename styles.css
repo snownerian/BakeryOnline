@@ -122,6 +122,53 @@ body { font-family: 'Georgia', 'Times New Roman', serif; background: #fdf6ee; mi
 .main-col { flex: 1; min-width: 0; }
 .side-col  { width: 270px; flex-shrink: 0; position: sticky; top: 80px; }
 
+/* ===== BUSCADOR ===== */
+.search-wrap {
+  display: flex; align-items: center; gap: 10px;
+  background: #fff; border: 2px solid #d4b896;
+  border-radius: 12px; padding: 8px 14px;
+  margin-bottom: 10px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.search-wrap:focus-within {
+  border-color: #8B5E3C;
+  box-shadow: 0 0 0 3px rgba(139,94,60,0.1);
+}
+.search-icon { font-size: 16px; flex-shrink: 0; opacity: 0.6; }
+.search-input {
+  flex: 1; border: none; outline: none;
+  font-size: 14px; font-family: inherit; color: #3d2510;
+  background: transparent;
+}
+.search-input::placeholder { color: #bba090; }
+.search-clear {
+  background: none; border: none; cursor: pointer;
+  color: #bba090; font-size: 14px; padding: 0 2px;
+  transition: color 0.15s; flex-shrink: 0;
+}
+.search-clear:hover { color: #c0392b; }
+
+.search-results-label {
+  font-size: 12px; color: #9a7050;
+  margin-bottom: 10px; padding-left: 4px;
+}
+
+/* Highlight de texto coincidente */
+.search-highlight {
+  background: #fde68a;
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 700;
+  color: #3d2510;
+}
+
+/* Tarjeta resaltada con teclado */
+.card.search-focused {
+  outline: 2px solid #8B5E3C;
+  outline-offset: 1px;
+  background: #fff8f2;
+}
+
 /* ===== TABS ===== */
 .tab-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
 .tab {
@@ -241,9 +288,7 @@ body { font-family: 'Georgia', 'Times New Roman', serif; background: #fdf6ee; mi
   .user-badge { display: none; }
 }
 
-/* ===== FOTOS (nuevo) ===== */
-
-/* Botón 📷 en la tarjeta del producto */
+/* ===== FOTOS ===== */
 .photo-btn {
   background: none; border: none; cursor: pointer;
   font-size: 15px; padding: 2px 3px; border-radius: 5px;
@@ -251,24 +296,15 @@ body { font-family: 'Georgia', 'Times New Roman', serif; background: #fdf6ee; mi
 }
 .photo-btn:hover { opacity: 1; }
 
-/* Lightbox — fondo oscuro al ver foto en grande */
 .lightbox-box {
-  position: relative;
-  background: #1a1008;
-  border-radius: 14px;
-  padding: 12px;
-  max-width: 90vw;
-  max-height: 90vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative; background: #1a1008;
+  border-radius: 14px; padding: 12px;
+  max-width: 90vw; max-height: 90vh;
+  display: flex; align-items: center; justify-content: center;
 }
 .lightbox-img {
-  max-width: 80vw;
-  max-height: 80vh;
-  border-radius: 10px;
-  object-fit: contain;
-  display: block;
+  max-width: 80vw; max-height: 80vh;
+  border-radius: 10px; object-fit: contain; display: block;
 }
 .lightbox-close {
   position: absolute; top: -12px; right: -12px;
@@ -281,7 +317,6 @@ body { font-family: 'Georgia', 'Times New Roman', serif; background: #fdf6ee; mi
 }
 .lightbox-close:hover { background: #c0392b; }
 
-/* Área de subida de imagen en el formulario */
 .image-upload-label {
   display: flex; align-items: center; justify-content: center;
   gap: 8px; padding: 10px;
@@ -291,19 +326,15 @@ body { font-family: 'Georgia', 'Times New Roman', serif; background: #fdf6ee; mi
 }
 .image-upload-label:hover { border-color: #8B5E3C; color: #8B5E3C; background: #fdf5ec; }
 
-/* Preview de imagen seleccionada en el formulario */
 .image-preview-box {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  margin-top: 4px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 4px;
 }
 .image-preview {
   width: 100%; max-height: 160px;
-  object-fit: cover; border-radius: 10px;
-  border: 1.5px solid #ecdccc;
+  object-fit: cover; border-radius: 10px; border: 1.5px solid #ecdccc;
 }
 .remove-image-btn {
   background: none; border: none; color: #c0392b;
-  font-size: 12px; cursor: pointer; font-family: inherit;
-  text-decoration: underline;
+  font-size: 12px; cursor: pointer; font-family: inherit; text-decoration: underline;
 }
 .remove-image-btn:hover { color: #a93226; }

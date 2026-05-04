@@ -20,7 +20,7 @@ const CATEGORIES = [
   { id: "bocaditos_dulces",  label: "Bocaditos Dulces",  icon: "🍬", color: "#C97B8A" },
   { id: "bocaditos_salados", label: "Bocaditos Salados", icon: "🧀", color: "#8A9E6A" },
   { id: "panes",             label: "Panes",             icon: "🍞", color: "#C4924A" },
-  { id: "Festivos",          label: "Festivos",          icon: "★",  color: "#5AC867" }
+  { id: "Festivos",          label: "Festivos",          icon: "★",  color: "#5AC867" },
   { id: "Kekes",             label: "Kekes",             icon: "🍰",  color: "#eb7a10" },
 ];
 
